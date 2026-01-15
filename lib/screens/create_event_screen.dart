@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:intl/intl.dart';
 import 'image_preview_screen.dart';
 
 class CreateEventScreen extends StatefulWidget {
@@ -18,7 +19,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   DateTime? _selectedDate;
   File? _imageFile;
   bool _isLoading = false;
-  String _privacy = 'Public';
+  bool _isPublic = true;
+  
+  // Tag Selection Logic
+  final List<String> _availableTags = ['Academic', 'Tech', 'Food', 'Fun', 'Sports', 'Workshop', 'Arts'];
+  final List<String> _selectedTags = [];
 
   final primaryColor = const Color(0xFF00A7C7);
   final bgColor = const Color(0xFFF8F9FA);
@@ -61,12 +66,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.photo_camera),
-              title: const Text('Camera'),
+              title: const Text('Take Photo'),
               onTap: () { Navigator.pop(context); _pickImage(ImageSource.camera); },
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text('Gallery'),
+              title: const Text('Choose from Gallery'),
               onTap: () { Navigator.pop(context); _pickImage(ImageSource.gallery); },
             ),
           ],
@@ -97,7 +102,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         final fileExt = _imageFile!.path.split('.').last;
         final path = 'events/${DateTime.now().millisecondsSinceEpoch}.$fileExt';
         
-        // Ensure 'images' bucket exists in dashboard
         await supabase.storage.from('images').upload(path, _imageFile!);
         imageUrl = supabase.storage.from('images').getPublicUrl(path);
       }
@@ -108,20 +112,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         'description': _descController.text,
         'start_datetime': _selectedDate!.toIso8601String(),
         'image_url': imageUrl,
-        'is_public': _privacy == 'Public',
+        'is_public': _isPublic,
+        'tags': _selectedTags, // Array for DB
         'organizer_id': user.id,
       });
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Event Published!')));
-      }
-    } on StorageException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Storage Error: ${e.message}. Bucket "images" missing?'),
-          backgroundColor: Colors.red,
-        ));
       }
     } catch (e) {
       if (mounted) {
@@ -164,11 +162,23 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             _label("Tags"),
             Wrap(
               spacing: 8,
-              children: ["Free", "Paid", "Academic", "Other"].map((tag) {
-                return Chip(
+              children: _availableTags.map((tag) {
+                final isSelected = _selectedTags.contains(tag);
+                return FilterChip(
                   label: Text(tag),
+                  selected: isSelected,
+                  onSelected: (bool selected) {
+                    setState(() {
+                      if (selected) {
+                        _selectedTags.add(tag);
+                      } else {
+                        _selectedTags.remove(tag);
+                      }
+                    });
+                  },
+                  selectedColor: primaryColor.withOpacity(0.2),
+                  checkmarkColor: primaryColor,
                   backgroundColor: Colors.white,
-                  shape: StadiumBorder(side: BorderSide(color: Colors.grey.shade300)),
                 );
               }).toList(),
             ),
@@ -235,12 +245,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
             const SizedBox(height: 20),
             _label("Privacy"),
-            Row(
-              children: [
-                Expanded(child: _privacyBtn("Public", Icons.public, _privacy == 'Public')),
-                const SizedBox(width: 12),
-                Expanded(child: _privacyBtn("Club-Only", Icons.group, _privacy == 'Club-Only')),
-              ],
+            SwitchListTile(
+              title: const Text("Public Event"),
+              subtitle: const Text("Visible to everyone"),
+              value: _isPublic,
+              activeColor: primaryColor,
+              onChanged: (val) => setState(() => _isPublic = val),
             ),
           ],
         ),
@@ -286,28 +296,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       fillColor: Colors.white,
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: primaryColor)),
-    );
-  }
-
-  Widget _privacyBtn(String text, IconData icon, bool selected) {
-    return GestureDetector(
-      onTap: () => setState(() => _privacy = text),
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          color: selected ? primaryColor.withOpacity(0.1) : Colors.white,
-          border: Border.all(color: selected ? primaryColor : Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: selected ? primaryColor : Colors.grey[600]),
-            const SizedBox(width: 8),
-            Text(text, style: TextStyle(color: selected ? primaryColor : Colors.grey[600], fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
     );
   }
 }
